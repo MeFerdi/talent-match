@@ -1,0 +1,15 @@
+# Core
+celery==5.3.6
+redis==4.6.0
+vine>=5.1.0,<6.0.0
+
+# Slack
+slack-bolt==1.18.0
+slack-sdk==3.21.3
+
+# OpenAI
+openai==0.28.0
+
+# Utilities
+python-dotenv==1.0.0
+pytz==2023.3.post1

@@ -19,6 +19,8 @@ class OpenAIClient:
     @retry(max_retries=3)
     @validate_input
     def evaluate_extension(self, request_context: str) -> Optional[ExtensionEvaluation]:
+        if not isinstance(request_context, str):
+            raise TypeError(f"request_context must be a string, got {type(request_context).__name__}")
         try:
             response = openai.ChatCompletion.create(
                 model=self.model,

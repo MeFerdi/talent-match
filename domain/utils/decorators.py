@@ -1,6 +1,7 @@
 import functools
+import inspect
 import time
-from typing import Callable, Any, TypeVar
+from typing import Callable, Any, TypeVar, Union
 from domain.utils.logging import logger
 
 F = TypeVar('F', bound=Callable[..., Any])
@@ -9,25 +10,36 @@ def validate_input(func: F) -> F:
     """Decorator to validate function inputs using type hints"""
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
-        type_hints = func.__annotations__
-        params = list(type_hints.keys())
+        # Get type hints, skipping return type if present
+        type_hints = {
+            k: v for k, v in func.__annotations__.items() 
+            if k != 'return'
+        }
         
-        # Skip 'self' for instance methods
-        start_idx = 1 if 'self' in params and len(args) > 0 and args[0] is params[0] else 0
+        # Handle bound methods (skip 'self' parameter)
+        bound_args = inspect.signature(func).bind(*args, **kwargs)
+        bound_args.apply_defaults()
         
-        # Validate args
-        for i, arg in enumerate(args[start_idx:], start=start_idx):
-            if i < len(params):
-                param_name = params[i]
+        # Validate all parameters
+        for param_name, value in bound_args.arguments.items():
+            if param_name in type_hints:
                 expected_type = type_hints[param_name]
-                if not isinstance(arg, expected_type):
-                    raise TypeError(f"Argument '{param_name}' must be {expected_type.__name__}")
-        
-        # Validate kwargs
-        for k, v in kwargs.items():
-            if k in type_hints and not isinstance(v, type_hints[k]):
-                raise TypeError(f"Argument '{k}' must be {type_hints[k].__name__}")
+                origin_type = getattr(expected_type, "__origin__", expected_type)
                 
+                # Handle Optional types
+                if origin_type is Union:
+                    type_args = expected_type.__args__
+                    if type(None) in type_args:
+                        expected_type = Union[tuple(
+                            t for t in type_args if t is not type(None)
+                        )]
+                
+                if not isinstance(value, expected_type):
+                    raise TypeError(
+                        f"Argument '{param_name}' must be {expected_type.__name__}, "
+                        f"got {type(value).__name__}"
+                    )
+        
         return func(*args, **kwargs)
     return wrapper
 

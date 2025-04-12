@@ -49,5 +49,13 @@ class MockSlackClient:
         except IndexError:
             return None
 
+    def clear_messages(self):
+        """Clear all stored messages"""
+        self.messages = []
+
 # Singleton instance for testing
 mock_slack = MockSlackClient()
+def send_task_assignment(task_id: str, channel: str):
+    """Simulate sending a task assignment message to a Slack channel."""
+    text = f"Task {task_id} has been assigned."
+    mock_slack.post_message(channel, text)

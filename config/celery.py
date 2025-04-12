@@ -1,6 +1,6 @@
 import os
 from celery import Celery
-# from .security import validate_task_payload
+from domain.utils.security import validate_task_payload
 
 app = Celery('talent-match')
 app.conf.update(
@@ -15,3 +15,9 @@ app.conf.update(
         'tasks.reassignment.*': {'queue': 'matching'}
     }
 )
+
+@app.task(bind=True)
+def validate_and_process_task(self, payload: dict):
+    if not validate_task_payload(payload):
+        raise ValueError("Invalid task payload")
+    print(f"Processing task: {payload['task_id']}")

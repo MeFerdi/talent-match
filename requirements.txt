@@ -13,3 +13,4 @@ openai==0.28.0
 # Utilities
 python-dotenv==1.0.0
 pytz==2023.3.post1
+pytest-mock

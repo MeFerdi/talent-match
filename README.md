@@ -55,7 +55,7 @@ cd talent-match
 
 ### 2. Configure Environment Variables
 
-Create a `.env` file in the root directory (or use the provided one) and configure the following variables:
+Create a `.env` file in the root directory and configure the following variables:
 
 ```env
 LOCAL_AI_URL="http://localhost:11434"

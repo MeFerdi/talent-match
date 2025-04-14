@@ -1,5 +1,4 @@
 from datetime import datetime
-import pytest
 from unittest.mock import patch, MagicMock
 from tasks.assignment import assign_task
 

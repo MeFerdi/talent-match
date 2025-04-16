@@ -3,6 +3,8 @@ from celery import Celery
 from domain.utils.security import validate_task_payload
 
 app = Celery('talent-match')
+app.config_from_object("config.settings", namespace="CELERY")
+app.autodiscover_tasks(["tasks.assignment", "tasks.reassignment", "tasks.monitoring"])
 app.conf.update(
     broker_url=os.getenv('REDIS_URL'),
     result_backend=os.getenv('REDIS_URL'),

@@ -1,5 +1,4 @@
 import openai
-from config import security
 from domain.models import Task
 
 class ExtensionService:

@@ -25,7 +25,9 @@ class Task(BaseModel):
         Returns:
             bool: True if the task is overdue, False otherwise.
         """
-        return self.deadline and datetime.now() > self.deadline
+        if self.deadline is None:
+            return False
+        return datetime.now() > self.deadline
 
     def add_extension(self, reason: str) -> None:
         """
@@ -58,32 +60,42 @@ class Task(BaseModel):
                 logger.warning(f"No data found for task_id: {task_id}")
                 return None
 
+            # Convert bytes to strings for Python 3
+            decoded_data = {}
+            for key, value in data.items():
+                if isinstance(key, bytes):
+                    key = key.decode('utf-8')
+                if isinstance(value, bytes):
+                    value = value.decode('utf-8')
+                decoded_data[key] = value
+
             # Safely parse matches
-            if 'matches' in data:
+            if 'matches' in decoded_data:
                 try:
-                    data['matches'] = {k: float(v) for k, v in json.loads(data['matches']).items()}
+                    decoded_data['matches'] = {k: float(v) for k, v in json.loads(decoded_data['matches']).items()}
                 except (json.JSONDecodeError, ValueError) as e:
                     logger.error(f"Invalid matches format for task {task_id}: {e}")
                     return None
-            if 'extensions' in data:
+            
+            # Safely parse extensions
+            if 'extensions' in decoded_data:
                 try:
-                    data['extensions'] = json.loads(data['extensions'])
+                    decoded_data['extensions'] = json.loads(decoded_data['extensions'])
                 except (json.JSONDecodeError, ValueError) as e:
                     logger.error(f"Invalid extensions format for task {task_id}: {e}")
                     return None
 
-
             # Convert datetime fields
             datetime_fields = ['claimed_at', 'deadline']
             for field in datetime_fields:
-                if data.get(field):
+                if decoded_data.get(field):
                     try:
-                        data[field] = datetime.fromisoformat(data[field])
+                        decoded_data[field] = datetime.fromisoformat(decoded_data[field])
                     except ValueError as e:
                         logger.error(f"Invalid {field} format for task {task_id}: {e}")
                         return None
 
-            return cls(**data)
+            return cls(**decoded_data)
 
         except Exception as e:
             logger.error(f"Error loading task from Redis: {e}")
@@ -101,13 +113,21 @@ class Task(BaseModel):
         """
         try:
             redis_data = self.model_dump()
+            
+            # Serialize matches
             redis_data['matches'] = json.dumps(redis_data['matches'])
+            
+            # Serialize extensions
+            redis_data['extensions'] = json.dumps(self.extensions)
 
-            # Convert datetime fields to ISO format
+            # Convert datetime fields to ISO format strings
             for field in ['claimed_at', 'deadline']:
-                if redis_data.get(field):
+                if redis_data.get(field) is not None:
                     redis_data[field] = redis_data[field].isoformat()
 
+            # Remove None values to avoid Redis errors
+            redis_data = {k: v for k, v in redis_data.items() if v is not None}
+            
             redis_client.hset(f"task:{self.task_id}", mapping=redis_data)
             logger.info(f"Task {self.task_id} saved to Redis successfully.")
             return True

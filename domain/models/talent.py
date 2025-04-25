@@ -39,8 +39,8 @@ class Talent(BaseModel):
 
             converted_data = {
                 'talent_id': talent_id,
-                'available': data.get(cls.AVAILABLE_KEY, 'False').lower() == 'true',
-                'rating': float(data.get(cls.RATING_KEY, 0))
+                'available': data.get(cls.AVAILABLE_KEY, b'False').decode('utf-8').lower() == 'true',
+                'rating': float(data.get(cls.RATING_KEY, b'0').decode('utf-8'))
             }
 
             return cls(**converted_data)
@@ -65,7 +65,8 @@ class Talent(BaseModel):
         try:
             redis_data = {
                 self.AVAILABLE_KEY: str(self.available),
-                self.RATING_KEY: str(self.rating)
+                self.RATING_KEY: str(self.rating),
+                "talent_id": self.talent_id  # Include talent_id for completeness
             }
             redis_client.hset(f"talent:{self.talent_id}", mapping=redis_data)
             logger.info(f"Talent {self.talent_id} saved to Redis successfully.")
@@ -94,7 +95,8 @@ class Talent(BaseModel):
                         f"talent:{talent.talent_id}",
                         mapping={
                             cls.AVAILABLE_KEY: str(talent.available),
-                            cls.RATING_KEY: str(talent.rating)
+                            cls.RATING_KEY: str(talent.rating),
+                            "talent_id": talent.talent_id  # Include talent_id for completeness
                         }
                     )
                 results = pipe.execute()

@@ -1,19 +1,37 @@
-import openai
+import os
+import google.generativeai as genai
 from domain.models import Task
 
 class ExtensionService:
     @staticmethod
-    def evaluate_requesst(task: Task, reason: str) -> bool:
-        """Use OpenAI to evaluate extension requests"""
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
-            messages=[{
-                "role": "system",
-                "content": "Evaluate task extension requests. Respond only with APPROVE or REJECT."
-            }, {
-                "role": "user",
-                "content": f"Reason: {reason}\nTask ID: {task.task_id}"
-            }],
-            temperature=0.3
-        )
-        return "APPROVE" in response.choices[0].message.content
+    def evaluate_request(task: Task, reason: str) -> bool:
+        """Use Gemini API to evaluate extension requests"""
+        
+        genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+        
+        model = genai.GenerativeModel('gemini-pro')
+        
+        prompt = f"""
+        Evaluate this task extension request:
+        - Task ID: {task.task_id}
+        - Status: {task.status}
+        - Reason: {reason}
+
+        Respond ONLY with either "APPROVE" or "REJECT".
+        """
+        
+        try:
+            response = model.generate_content(
+                prompt,
+                generation_config={
+                    "temperature": 0.3,
+                    "max_output_tokens": 10,
+                }
+            )
+            
+            result = response.text.strip().upper()
+            return "APPROVE" in result
+        
+        except Exception as e:
+            print(f"Gemini API error: {e}")
+            return False

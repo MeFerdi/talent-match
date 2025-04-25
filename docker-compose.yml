@@ -1,21 +1,40 @@
-version: "3.9"
-
 services:
-  app:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    environment:
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-    depends_on:
-      - redis
-    volumes:
-      - .:/app
-    command: pytest tests
-
   redis:
-    image: redis:latest
+    image: redis:7.2-alpine
     container_name: redis
     ports:
       - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+
+  app:
+    build: .
+    environment:
+      - REDIS_HOST=redis
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - .:/app
+    ports:
+      - "8000:8000"
+
+  celery-worker:
+    build: .
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+    command: celery -A app.tasks worker --loglevel=info
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - .:/app
+
+volumes:
+  redis_data:

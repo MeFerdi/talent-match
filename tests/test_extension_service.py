@@ -3,60 +3,51 @@ from unittest.mock import patch, MagicMock
 from domain.services.extension import ExtensionService
 from domain.models import Task
 
-@patch("domain.services.extension.openai.ChatCompletion.create")
-def test_evaluate_request_approve(mock_openai_create):
-    # Arrange
-    mock_openai_create.return_value = MagicMock(
-        choices=[MagicMock(message=MagicMock(content="APPROVE"))]
-    )
+@pytest.fixture(autouse=True)
+def mock_gemini():
+    with patch("google.generativeai.GenerativeModel") as mock_model:
+        mock_response = MagicMock()
+        mock_response.text = "APPROVE"  # Default response
+        mock_model.return_value.generate_content.return_value = mock_response
+        yield mock_model
+
+def test_evaluate_request_approve(mock_gemini):
+    mock_gemini.return_value.generate_content.return_value.text = "APPROVE"
     task = Task(task_id="task_123")
     reason = "Need more time to complete the task."
 
-    # Act
-    result = ExtensionService.evaluate_requesst(task, reason)
+    result = ExtensionService.evaluate_request(task, reason)
 
-    # Assert
     assert result is True
-    mock_openai_create.assert_called_once_with(
-        model="gpt-3.5-turbo",
-        messages=[
-            {
-                "role": "system",
-                "content": "Evaluate task extension requests. Respond only with APPROVE or REJECT."
-            },
-            {
-                "role": "user",
-                "content": f"Reason: {reason}\nTask ID: {task.task_id}"
-            }
-        ],
-        temperature=0.3
-    )
+    mock_gemini.return_value.generate_content.assert_called_once()
+    
+    args, kwargs = mock_gemini.return_value.generate_content.call_args
+    prompt = args[0]
+    
 
-@patch("domain.services.extension.openai.ChatCompletion.create")
-def test_evaluate_request_reject(mock_openai_create):
-    # Arrange
-    mock_openai_create.return_value = MagicMock(
-        choices=[MagicMock(message=MagicMock(content="REJECT"))]
-    )
+    assert task.task_id in prompt
+    assert reason in prompt
+    assert "APPROVE" in prompt or "approve" in prompt.lower()
+    assert "REJECT" in prompt or "reject" in prompt.lower()
+    assert kwargs["generation_config"]["temperature"] == 0.3
+    assert kwargs["generation_config"]["max_output_tokens"] == 10
+
+def test_evaluate_request_reject(mock_gemini):
+    mock_gemini.return_value.generate_content.return_value.text = "REJECT"
     task = Task(task_id="task_123")
     reason = "Need more time to complete the task."
 
-    # Act
-    result = ExtensionService.evaluate_requesst(task, reason)
+    result = ExtensionService.evaluate_request(task, reason)
 
-    # Assert
     assert result is False
-    mock_openai_create.assert_called_once_with(
-        model="gpt-3.5-turbo",
-        messages=[
-            {
-                "role": "system",
-                "content": "Evaluate task extension requests. Respond only with APPROVE or REJECT."
-            },
-            {
-                "role": "user",
-                "content": f"Reason: {reason}\nTask ID: {task.task_id}"
-            }
-        ],
-        temperature=0.3
-    )
+    mock_gemini.return_value.generate_content.assert_called_once()
+    
+    args, kwargs = mock_gemini.return_value.generate_content.call_args
+    prompt = args[0]
+    
+    assert task.task_id in prompt
+    assert reason in prompt
+    assert "APPROVE" in prompt or "approve" in prompt.lower()
+    assert "REJECT" in prompt or "reject" in prompt.lower()
+    assert kwargs["generation_config"]["temperature"] == 0.3
+    assert kwargs["generation_config"]["max_output_tokens"] == 10

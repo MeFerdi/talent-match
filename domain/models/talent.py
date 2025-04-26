@@ -32,16 +32,17 @@ class Talent(BaseModel):
             if not data:
                 logger.warning(f"No data found for talent {talent_id}")
                 return None
+            decoded_data = {key.decode('utf-8'): value.decode('utf-8') for key, value in data.items()}
 
-            if cls.AVAILABLE_KEY not in data or cls.RATING_KEY not in data:
-                logger.warning(f"Incomplete data for talent {talent_id}: {data}")
+            if cls.AVAILABLE_KEY not in decoded_data or cls.RATING_KEY not in decoded_data:
+                logger.warning(f"Incomplete data for talent {talent_id}: {decoded_data}")
                 return None
 
             converted_data = {
-                'talent_id': talent_id,
-                'available': data.get(cls.AVAILABLE_KEY, b'False').decode('utf-8').lower() == 'true',
-                'rating': float(data.get(cls.RATING_KEY, b'0').decode('utf-8'))
-            }
+            'talent_id': decoded_data.get('talent_id', ''),
+            'available': decoded_data.get(cls.AVAILABLE_KEY, 'False').lower() == 'true',
+            'rating': float(decoded_data.get(cls.RATING_KEY, '0'))
+        }
 
             return cls(**converted_data)
 
@@ -66,7 +67,7 @@ class Talent(BaseModel):
             redis_data = {
                 self.AVAILABLE_KEY: str(self.available),
                 self.RATING_KEY: str(self.rating),
-                "talent_id": self.talent_id  # Include talent_id for completeness
+                "talent_id": self.talent_id
             }
             redis_client.hset(f"talent:{self.talent_id}", mapping=redis_data)
             logger.info(f"Talent {self.talent_id} saved to Redis successfully.")

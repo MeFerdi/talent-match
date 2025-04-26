@@ -7,7 +7,7 @@ from domain.models import Task
 def mock_gemini():
     with patch("google.generativeai.GenerativeModel") as mock_model:
         mock_response = MagicMock()
-        mock_response.text = "APPROVE"  # Default response
+        mock_response.text = "APPROVE"
         mock_model.return_value.generate_content.return_value = mock_response
         yield mock_model
 

@@ -65,6 +65,7 @@ REDIS_URL="redis://localhost:6379/0"
 CELERY_BROKER_URL="redis://localhost:6379/0"
 CELERY_RESULT_BACKEND="redis://localhost:6379/0"
 PYTHONPATH=.
+GEMINI_API_KEY=your_api_key_here
 ```
 
 ### 3. Install Dependencies

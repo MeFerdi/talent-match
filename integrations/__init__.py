@@ -11,8 +11,7 @@ from .mock.slack import MockSlackClient
 __all__ = [
     'ExtensionEvaluation', 
     'RedisEventStream',
-    'MockSlackClient',
-    'MockOpenAIClient'
+    'MockSlackClient'
 ]
 
 # Package version

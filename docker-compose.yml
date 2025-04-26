@@ -1,4 +1,4 @@
-version: '3.8'  # Explicit version helps with compatibility
+version: '3.8'
 
 services:
   redis:
@@ -22,7 +22,7 @@ services:
       - REDIS_HOST=redis
       - GEMINI_API_KEY=${GEMINI_API_KEY}
       - CELERY_BROKER_URL=redis://redis:6379/0
-      - PYTHONPATH=/app  # Critical for module resolution
+      - PYTHONPATH=/app
     depends_on:
       redis:
         condition: service_healthy
@@ -30,8 +30,8 @@ services:
       - .:/app
     ports:
       - "8000:8000"
-    restart: unless-stopped  # Auto-recover on failure
-    command: sh -c "pytest tests/ || true && python app/main.py"  # Ensure app runs even if tests fail
+    restart: unless-stopped
+    command: sh -c "pytest tests/ || true && python main.py"
 
   celery-worker:
     build: 
@@ -40,11 +40,11 @@ services:
     environment:
       - CELERY_BROKER_URL=redis://redis:6379/0
       - GEMINI_API_KEY=${GEMINI_API_KEY}
-      - PYTHONPATH=/app  # Critical for Celery's module discovery
+      - PYTHONPATH=/app
     command: celery -A app.tasks worker --loglevel=info
     depends_on:
       - redis
-      - app  # Wait for app to be built first
+      - app
     volumes:
       - .:/app
     restart: unless-stopped

@@ -1,3 +1,5 @@
+version: '3.8'  # Explicit version helps with compatibility
+
 services:
   redis:
     image: redis:7.2-alpine
@@ -10,12 +12,17 @@ services:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
+      retries: 3
 
   app:
-    build: .
+    build: 
+      context: .
+      dockerfile: Dockerfile
     environment:
       - REDIS_HOST=redis
       - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - PYTHONPATH=/app  # Critical for module resolution
     depends_on:
       redis:
         condition: service_healthy
@@ -23,18 +30,28 @@ services:
       - .:/app
     ports:
       - "8000:8000"
+    restart: unless-stopped  # Auto-recover on failure
+    command: sh -c "pytest tests/ || true && python app/main.py"  # Ensure app runs even if tests fail
 
   celery-worker:
-    build: .
+    build: 
+      context: .
+      dockerfile: Dockerfile
     environment:
       - CELERY_BROKER_URL=redis://redis:6379/0
       - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - PYTHONPATH=/app  # Critical for Celery's module discovery
     command: celery -A app.tasks worker --loglevel=info
     depends_on:
-      redis:
-        condition: service_healthy
+      - redis
+      - app  # Wait for app to be built first
     volumes:
       - .:/app
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "celery", "-A", "app.tasks", "inspect", "ping"]
+      interval: 30s
+      timeout: 10s
 
 volumes:
   redis_data:

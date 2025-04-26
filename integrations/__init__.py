@@ -4,12 +4,11 @@ Talent Match - Integration Modules
 This package contains all external service integrations (OpenAI, Slack, Redis, etc.)
 """
 
-from .openai_replacement import ExtensionEvaluation
+from .gemini import ExtensionEvaluation
 from .redis_events import RedisEventStream
 from .mock.slack import MockSlackClient
 
 __all__ = [
-    'OpenAIClient',
     'ExtensionEvaluation', 
     'RedisEventStream',
     'MockSlackClient',

@@ -1,5 +1,6 @@
 import os
 from celery import Celery
+from celery.schedules import crontab
 from domain.utils.security import validate_task_payload
 
 app = Celery('talent-match')
@@ -15,6 +16,17 @@ app.conf.update(
     task_routes={
         'tasks.monitoring.*': {'queue': 'deadlines'},
         'tasks.reassignment.*': {'queue': 'matching'}
+    },
+    beat_schedule={
+        'reassign-tasks-every-10-minutes': {
+            'task': 'tasks.reassignment.reassign_task',
+            'schedule': crontab(minute='*/10'),
+            'args': ('task_id',)
+        },
+        'monitoring-tasks-every-5-minutes': {
+            'task': 'tasks.monitoring.monitor_tasks',
+            'schedule': crontab(minute='*/5'),
+        }
     }
 )
 

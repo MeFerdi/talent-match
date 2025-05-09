@@ -97,7 +97,7 @@ class Talent(BaseModel):
                         mapping={
                             cls.AVAILABLE_KEY: str(talent.available),
                             cls.RATING_KEY: str(talent.rating),
-                            "talent_id": talent.talent_id  # Include talent_id for completeness
+                            "talent_id": talent.talent_id
                         }
                     )
                 results = pipe.execute()

@@ -60,7 +60,6 @@ class Task(BaseModel):
                 logger.warning(f"No data found for task_id: {task_id}")
                 return None
 
-            # Convert bytes to strings for Python 3
             decoded_data = {}
             for key, value in data.items():
                 if isinstance(key, bytes):
@@ -85,7 +84,6 @@ class Task(BaseModel):
                     logger.error(f"Invalid extensions format for task {task_id}: {e}")
                     return None
 
-            # Convert datetime fields
             datetime_fields = ['claimed_at', 'deadline']
             for field in datetime_fields:
                 if decoded_data.get(field):
@@ -114,18 +112,16 @@ class Task(BaseModel):
         try:
             redis_data = self.model_dump()
             
-            # Serialize matches
             redis_data['matches'] = json.dumps(redis_data['matches'])
             
-            # Serialize extensions
             redis_data['extensions'] = json.dumps(self.extensions)
 
-            # Convert datetime fields to ISO format strings
+    
             for field in ['claimed_at', 'deadline']:
                 if redis_data.get(field) is not None:
                     redis_data[field] = redis_data[field].isoformat()
 
-            # Remove None values to avoid Redis errors
+
             redis_data = {k: v for k, v in redis_data.items() if v is not None}
             
             redis_client.hset(f"task:{self.task_id}", mapping=redis_data)

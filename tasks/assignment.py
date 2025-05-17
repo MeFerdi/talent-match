@@ -1,23 +1,29 @@
-from celery import shared_task
-from config.redis import get_redis
-from domain.models import Task
-from domain.services import MatchingService
 from datetime import datetime
+from celery import shared_task
+from domain.services import MatchingService, DeadlineService
+from config.redis import get_redis
 from domain.utils.logging import logger
 
-@shared_task(bind=True)
+@shared_task(bind=True, max_retries=3)
 def assign_task(self, task_id: str):
-    logger.info(f"Starting task assignment for task_id: {task_id}")
     redis = get_redis()
-    talent_id = MatchingService.get_next_available(task_id)
-    
-    if talent_id:
-        task = Task(
-            task_id=task_id,
-            assigned_to=talent_id,
-            claimed_at=datetime.now()
-        )
-        redis.hset(f"task:{task_id}", task.model_dump_json())
-        logger.info(f"Task {task_id} successfully assigned to talent {talent_id}")
-    else:
-        logger.warning(f"No available talent found for task {task_id}")
+    try:
+        talent_id = MatchingService.get_next_available(task_id)
+        if not talent_id:
+            raise ValueError("No available talent")
+
+        # Atomic assignment
+        with redis.pipeline() as pipe:
+            pipe.hset(f"task:{task_id}", mapping={
+                "assigned_to": talent_id,
+                "claimed_at": datetime.now().isoformat(),
+                "status": "assigned"
+            })
+            pipe.hset(f"talent:{talent_id}", "available", "false")
+            pipe.execute()
+
+        DeadlineService.set_initial_deadline(task_id)
+        logger.info(f"Assigned {task_id} to {talent_id}")
+    except Exception as e:
+        logger.error(f"Assignment failed for {task_id}: {e}")
+        self.retry(countdown=60)

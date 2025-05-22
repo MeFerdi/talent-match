@@ -1,115 +1,107 @@
-import redis
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+from typing import Optional, List, Dict
+from datetime import datetime, timedelta
+
 from domain.models.task import Task
-from domain.models.talent import Talent
-from domain.services.extension import ExtensionService
+from domain.services.deadline import DeadlineService, ExtensionService
 from domain.services.matching import MatchingService
-from domain.utils.logging import logger
+from tasks.assignment import assign_task
+from tasks.reassignment import reassign_task
+from integrations.redis_events import RedisEventStream
+import redis
 
+app = FastAPI(title="Talent Match API")
 
-def create_and_save_task(redis_client):
-    """Create and save a task to Redis."""
-    logger.info("Creating and saving a task to Redis...")
+redis_client = redis.Redis.from_url("redis://localhost:6379/0", decode_responses=True)
+event_stream = RedisEventStream()
+
+# --- Pydantic Schemas for API ---
+class TaskCreate(BaseModel):
+    description: str
+    matches: Dict[str, float]
+
+class ExtensionRequest(BaseModel):
+    reason: str
+
+class ExtensionProcess(BaseModel):
+    status: str  # "approved" or "rejected"
+    reason: Optional[str] = None
+
+# --- API Endpoints ---
+
+@app.post("/tasks", response_model=Task)
+def create_task(payload: TaskCreate):
+    # Generate a new task_id (for demo, use timestamp)
+    task_id = f"task_{int(datetime.now().timestamp())}"
     task = Task(
-        task_id="task_001",
-        assigned_to="talent_001",
-        claimed_at=None,
-        deadline=None,
+        task_id=task_id,
         status="unassigned",
+        matches=payload.matches,
         extensions=[],
-        matches={"talent_001": 0.9, "talent_002": 0.8}
+        deadline=datetime.now() + timedelta(hours=24),
+        due_date=datetime.now() + timedelta(hours=24)
     )
-    if task.to_redis(redis_client):
-        logger.info(f"Task {task.task_id} saved successfully.")
+    task.to_redis(redis_client)
+    # Optionally, trigger assignment
+    assign_task.delay(task_id)
+    event_stream.publish("tasks", {"event": "created", "task_id": task_id})
     return task
 
-
-def load_task_and_talent(redis_client, task_id, talent_id):
-    """Load a task and a talent from Redis."""
-    logger.info("Loading a task from Redis...")
+@app.get("/tasks/{task_id}", response_model=Task)
+def get_task(task_id: str):
     task = Task.from_redis(redis_client, task_id)
-    if task:
-        logger.info(f"Loaded task: {task}")
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return task
 
-    logger.info("Loading a talent from Redis...")
-    talent = Talent.from_redis(redis_client, talent_id)
-    if talent:
-        logger.info(f"Loaded talent: {talent}")
+@app.post("/tasks/{task_id}/request-extension")
+def request_extension(task_id: str, req: ExtensionRequest):
+    ok = ExtensionService.request_extension(task_id, req.reason)
+    if not ok:
+        raise HTTPException(status_code=400, detail="Extension request failed")
+    event_stream.publish("tasks", {"event": "extension_requested", "task_id": task_id})
+    return {"status": "pending"}
 
-    return task, talent
-
-
-def assign_task_to_best_talent(task, redis_client):
-    """Assign the task to the best-suited talent."""
-    logger.info("Assigning task to the best-suited talent...")
-    best_talent = MatchingService.get_best_match(task)
-    if best_talent:
-        task.assigned_to = best_talent
-        task.to_redis(redis_client)
-        logger.info(f"Task {task.task_id} assigned to talent {best_talent}.")
+@app.post("/tasks/{task_id}/process-extension")
+def process_extension(task_id: str, req: ExtensionProcess):
+    # For demo, just update fields directly
+    task = Task.from_redis(redis_client, task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    task.extension_status = req.status
+    if req.status == "rejected":
+        task.extension_rejection_reason = req.reason or "Rejected"
     else:
-        logger.warning(f"No suitable talent found for task {task.task_id}.")
+        task.extension_rejection_reason = ""
+        # Optionally extend deadline
+        task.deadline = datetime.now() + timedelta(hours=24)
+        task.due_date = task.deadline
+    task.to_redis(redis_client)
+    event_stream.publish("tasks", {"event": "extension_processed", "task_id": task_id, "status": req.status})
+    return {"extension_status": req.status}
 
+@app.post("/cron/reassign-tasks")
+def trigger_reassignment():
+    # For demo, you might want to pass a list of task_ids or scan all tasks
+    # Here, just a placeholder for triggering the Celery task
+    reassign_task.delay("task_id_placeholder")
+    event_stream.publish("tasks", {"event": "reassignment_triggered"})
+    return {"status": "reassignment triggered"}
 
-def monitor_task(task):
-    """Monitor the task for overdue status."""
-    logger.info("Monitoring task...")
-    if task.is_overdue():
-        logger.info(f"Task {task.task_id} is overdue.")
-        return True
-    else:
-        logger.info(f"Task {task.task_id} is not overdue.")
-        return False
+@app.post("/tasks/{task_id}/complete")
+def complete_task(task_id: str):
+    task = Task.from_redis(redis_client, task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    if task.extension_status == "rejected":
+        raise HTTPException(status_code=400, detail="Cannot complete while extension is rejected.")
+    task.status = "completed"
+    task.to_redis(redis_client)
+    event_stream.publish("tasks", {"event": "completed", "task_id": task_id})
+    return {"status": "completed"}
 
-
-def reassign_task_if_needed(task, redis_client):
-    """Reassign the task if no extension is requested after the deadline."""
-    logger.info("Checking if reassignment is needed...")
-    if task.is_overdue() and not task.has_requested_extension():
-        logger.info(f"Reassigning task {task.task_id} to the next best talent...")
-        best_talent = MatchingService.get_next_available(task.task_id)
-        if best_talent:
-            task.assigned_to = best_talent
-            task.to_redis(redis_client)
-            logger.info(f"Task {task.task_id} reassigned to talent {best_talent}.")
-        else:
-            logger.warning(f"No available talent to reassign task {task.task_id}.")
-
-
-def evaluate_extension_request(task):
-    """Evaluate an extension request using Gemini AI."""
-    logger.info("Evaluating an extension request...")
-    reason = "Need more time to complete the task due to unforeseen circumstances."
-    decision = ExtensionService.evaluate_request(task, reason)
-    if decision:
-        logger.info(f"Extension request for task {task.task_id} approved.")
-    else:
-        logger.info(f"Extension request for task {task.task_id} rejected.")
-
-
-def main():
-    """
-    Main entry point for the Talent Match application.
-    This function demonstrates the core functionalities of the application.
-    """
-
-    redis_client = redis.Redis(host="localhost", port=6379, db=0)
-
-    task = create_and_save_task(redis_client)
-
-    loaded_task, loaded_talent = load_task_and_talent(redis_client, "task_001", "talent_001")
-
-    if loaded_task:
-        assign_task_to_best_talent(loaded_task, redis_client)
-
-    if loaded_task:
-        is_overdue = monitor_task(loaded_task)
-
-    if loaded_task and is_overdue:
-        reassign_task_if_needed(loaded_task, redis_client)
-
-    if loaded_task:
-        evaluate_extension_request(loaded_task)
-
-
-if __name__ == "__main__":
-    main()
+# Optionally, add a health check
+@app.get("/health")
+def health():
+    return {"status": "ok"}

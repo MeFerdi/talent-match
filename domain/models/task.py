@@ -1,132 +1,77 @@
-from pydantic import BaseModel, Field
 from datetime import datetime
-from typing import List, Dict, Optional, Any
 import json
-import redis
-from domain.utils.logging import logger
+from typing import Dict, List, Optional
+from venv import logger
 
+from pydantic import BaseModel
+import redis
 
 class Task(BaseModel):
-    """
-    Represents a Task object with attributes for Redis storage and retrieval.
-    """
-    task_id: str = Field(..., min_length=3, description="Unique identifier for the task.")
+    task_id: str
     assigned_to: Optional[str] = None
     claimed_at: Optional[datetime] = None
     deadline: Optional[datetime] = None
     status: str = "unassigned"
-    extensions: List[Dict[str, Any]] = []
-    matches: Dict[str, float] = Field(default_factory=dict)
+    extensions: List[Dict] = []
+    matches: Dict[str, float] = {}
+    due_date: Optional[datetime] = None
+    extension_status: str = "none"  # "none", "pending", "approved", "rejected"
+    extension_requested_at: Optional[datetime] = None
+    extension_rejection_reason: Optional[str] = None
 
     def is_overdue(self) -> bool:
-        """
-        Check if the task has passed its deadline.
+        # Use due_date if present, fallback to deadline for backward compatibility
+        check_date = self.due_date or self.deadline
+        return check_date and datetime.now() > check_date
 
-        Returns:
-            bool: True if the task is overdue, False otherwise.
-        """
-        if self.deadline is None:
-            return False
-        return datetime.now() > self.deadline
-
-    def add_extension(self, reason: str) -> None:
-        """
-        Add an extension request to the task.
-
-        Args:
-            reason (str): The reason for the extension request.
-        """
-        self.extensions.append({
-            "timestamp": datetime.now(),
-            "reason": reason,
-            "approved": None
-        })
+    def has_requested_extension(self) -> bool:
+        """Return True if any extension requests exist for this task."""
+        return self.extension_status in ("pending", "approved", "rejected")
 
     @classmethod
-    def from_redis(cls, redis_client: redis.Redis, task_id: str) -> Optional['Task']:
-        """
-        Load a Task object from Redis with proper error handling.
-
-        Args:
-            redis_client (redis.Redis): Redis client instance.
-            task_id (str): The ID of the task to load.
-
-        Returns:
-            Optional[Task]: The Task object if found, otherwise None.
-        """
+    def from_redis(cls, redis_client: redis.Redis, task_id: str) -> Optional["Task"]:
         try:
             data = redis_client.hgetall(f"task:{task_id}")
             if not data:
-                logger.warning(f"No data found for task_id: {task_id}")
                 return None
-
-            decoded_data = {}
-            for key, value in data.items():
-                if isinstance(key, bytes):
-                    key = key.decode('utf-8')
-                if isinstance(value, bytes):
-                    value = value.decode('utf-8')
-                decoded_data[key] = value
-
-            # Safely parse matches
-            if 'matches' in decoded_data:
-                try:
-                    decoded_data['matches'] = {k: float(v) for k, v in json.loads(decoded_data['matches']).items()}
-                except (json.JSONDecodeError, ValueError) as e:
-                    logger.error(f"Invalid matches format for task {task_id}: {e}")
-                    return None
-            
-            # Safely parse extensions
-            if 'extensions' in decoded_data:
-                try:
-                    decoded_data['extensions'] = json.loads(decoded_data['extensions'])
-                except (json.JSONDecodeError, ValueError) as e:
-                    logger.error(f"Invalid extensions format for task {task_id}: {e}")
-                    return None
-
-            datetime_fields = ['claimed_at', 'deadline']
-            for field in datetime_fields:
-                if decoded_data.get(field):
-                    try:
-                        decoded_data[field] = datetime.fromisoformat(decoded_data[field])
-                    except ValueError as e:
-                        logger.error(f"Invalid {field} format for task {task_id}: {e}")
-                        return None
-
-            return cls(**decoded_data)
-
+            decoded = {k.decode() if isinstance(k, bytes) else k:
+                       v.decode() if isinstance(v, bytes) else v
+                       for k, v in data.items()}
+            return cls(
+                task_id=task_id,
+                assigned_to=decoded.get("assigned_to"),
+                claimed_at=datetime.fromisoformat(decoded["claimed_at"]) if decoded.get("claimed_at") else None,
+                deadline=datetime.fromisoformat(decoded["deadline"]) if decoded.get("deadline") else None,
+                status=decoded.get("status", "unassigned"),
+                extensions=json.loads(decoded.get("extensions", "[]")),
+                matches=json.loads(decoded.get("matches", "{}")),
+                due_date=datetime.fromisoformat(decoded["due_date"]) if decoded.get("due_date") else None,
+                extension_status=decoded.get("extension_status", "none"),
+                extension_requested_at=datetime.fromisoformat(decoded["extension_requested_at"]) if decoded.get("extension_requested_at") else None,
+                extension_rejection_reason=decoded.get("extension_rejection_reason")
+            )
         except Exception as e:
-            logger.error(f"Error loading task from Redis: {e}")
+            logger.error(f"Failed to load task {task_id}: {e}")
             return None
 
     def to_redis(self, redis_client: redis.Redis) -> bool:
-        """
-        Save the Task object to Redis.
-
-        Args:
-            redis_client (redis.Redis): Redis client instance.
-
-        Returns:
-            bool: True if the save was successful, False otherwise.
-        """
         try:
-            redis_data = self.model_dump()
-            
-            redis_data['matches'] = json.dumps(redis_data['matches'])
-            
-            redis_data['extensions'] = json.dumps(self.extensions)
-
-    
-            for field in ['claimed_at', 'deadline']:
-                if redis_data.get(field) is not None:
-                    redis_data[field] = redis_data[field].isoformat()
-
-
-            redis_data = {k: v for k, v in redis_data.items() if v is not None}
-            
-            redis_client.hset(f"task:{self.task_id}", mapping=redis_data)
-            logger.info(f"Task {self.task_id} saved to Redis successfully.")
+            redis_client.hset(
+                f"task:{self.task_id}",
+                mapping={
+                    "assigned_to": self.assigned_to or "",
+                    "claimed_at": self.claimed_at.isoformat() if self.claimed_at else "",
+                    "deadline": self.deadline.isoformat() if self.deadline else "",
+                    "status": self.status,
+                    "extensions": json.dumps(self.extensions),
+                    "matches": json.dumps(self.matches),
+                    "due_date": self.due_date.isoformat() if self.due_date else "",
+                    "extension_status": self.extension_status,
+                    "extension_requested_at": self.extension_requested_at.isoformat() if self.extension_requested_at else "",
+                    "extension_rejection_reason": self.extension_rejection_reason or ""
+                }
+            )
             return True
         except Exception as e:
-            logger.error(f"Error saving task {self.task_id} to Redis: {e}")
+            logger.error(f"Failed to save task {self.task_id}: {e}")
             return False

@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta
-from celery import Task, shared_task
+from celery import shared_task
+from domain.models.task import Task
 from domain.services import MatchingService
 from config.redis import get_redis
 from domain.utils.logging import logger

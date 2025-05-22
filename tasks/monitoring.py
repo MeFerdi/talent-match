@@ -3,8 +3,9 @@ from datetime import datetime
 from config.redis import get_redis
 from domain.models import Task
 from domain.utils.logging import logger
+from integrations.gemini import GeminiAIClient
 from tasks.reassignment import reassign_task
-from integrations.gemini import evaluate_extension
+from tasks.evaluation import evaluate_extension_task
 
 @shared_task
 def check_deadlines():
@@ -26,10 +27,16 @@ def check_deadlines():
         # If extension is pending, evaluate it
         if task.extension_status == "pending":
             logger.info(f"Evaluating extension for overdue task {task_id_str}")
-            evaluate_extension.delay(task_id_str)
-        # If extension is rejected or no extension, reassign
-        elif task.status == "assigned" or task.extension_status == "rejected":
-            logger.info(f"Reassigning overdue task {task_id_str}")
+            evaluate_extension_task.delay(task_id_str)
+        elif task.status == "rejected" or (task.status == "assigned" and task.is_overdue()):
+            logger.info(f"Setting task {task_id_str} to reassigning")
+            task.status = "reassigning"
+            task.to_redis(redis)
             reassign_task.delay(task_id_str)
         else:
             logger.info(f"No action needed for task {task_id_str} with status {task.status} and extension_status {task.extension_status}")
+
+@shared_task
+def evaluate_extension_task(task_id: str):
+    ai_client = GeminiAIClient()
+    ai_client.evaluate_extension(task_id)

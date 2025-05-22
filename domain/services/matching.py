@@ -26,3 +26,10 @@ class MatchingService:
         except Exception as e:
             logger.error(f"Matching failed for {task_id}: {e}")
             return None
+    @staticmethod
+    def get_best_match(task: Task) -> Optional[str]:
+        """Returns the talent_id with the highest match score for the given task."""
+        if not task or not task.matches:
+            return None
+        # Return the talent_id with the highest score
+        return max(task.matches, key=task.matches.get)

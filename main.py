@@ -1,11 +1,10 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from typing import Optional, List, Dict
+from typing import Optional, Dict
 from datetime import datetime, timedelta
 
 from domain.models.task import Task
-from domain.services.deadline import DeadlineService, ExtensionService
-from domain.services.matching import MatchingService
+from domain.services.deadline import ExtensionService
 from tasks.assignment import assign_task
 from tasks.reassignment import reassign_task
 from integrations.redis_events import RedisEventStream
@@ -28,8 +27,6 @@ class ExtensionProcess(BaseModel):
     status: str  # "approved" or "rejected"
     reason: Optional[str] = None
 
-# --- API Endpoints ---
-
 @app.post("/tasks", response_model=Task)
 def create_task(payload: TaskCreate):
     # Generate a new task_id (for demo, use timestamp)
@@ -43,10 +40,10 @@ def create_task(payload: TaskCreate):
         due_date=datetime.now() + timedelta(hours=24)
     )
     task.to_redis(redis_client)
-    # Optionally, trigger assignment
+    # Ensure automatic assignment by triggering the Celery assignment task immediately
     assign_task.delay(task_id)
     event_stream.publish("tasks", {"event": "created", "task_id": task_id})
-    return task
+    return Task.from_redis(redis_client, task_id)  # Return the latest state (may still be unassigned if Celery is async)
 
 @app.get("/tasks/{task_id}", response_model=Task)
 def get_task(task_id: str):

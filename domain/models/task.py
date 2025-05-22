@@ -1,8 +1,7 @@
 from datetime import datetime
 import json
 from typing import Dict, List, Optional
-from venv import logger
-
+from domain.utils.logging import logger
 from pydantic import BaseModel
 import redis
 

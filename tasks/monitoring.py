@@ -2,27 +2,34 @@ from celery import shared_task
 from datetime import datetime
 from config.redis import get_redis
 from domain.models import Task
-from tasks.reassignment import reassign_task
 from domain.utils.logging import logger
+from tasks.reassignment import reassign_task
+from integrations.gemini import evaluate_extension
 
-@shared_task(bind=True)
-def check_deadline(self, task_id: str):
-    logger.info(f"Checking deadline for task_id: {task_id}")
+@shared_task
+def check_deadlines():
     redis = get_redis()
-    task_data = redis.hgetall(f"task:{task_id}")
-    
-    if not task_data:
-        logger.warning(f"No data found for task_id: {task_id}")
-        return
+    now = datetime.now()
+    expired_tasks = redis.zrangebyscore(
+        "assignments:active",
+        0,
+        now.timestamp()
+    )
 
-    task = Task(**task_data)
-    
-    if task.is_overdue():
-        logger.info(f"Task {task_id} is overdue")
-        if not task.extensions:
-            logger.info(f"No extensions found for task {task_id}. Triggering reassignment.")
-            reassign_task.delay(task_id)
+    for task_id in expired_tasks:
+        task_id_str = task_id.decode() if isinstance(task_id, bytes) else task_id
+        task = Task.from_redis(redis, task_id_str)
+        if not task:
+            logger.warning(f"Task {task_id_str} not found in Redis.")
+            continue
+
+        # If extension is pending, evaluate it
+        if task.extension_status == "pending":
+            logger.info(f"Evaluating extension for overdue task {task_id_str}")
+            evaluate_extension.delay(task_id_str)
+        # If extension is rejected or no extension, reassign
+        elif task.status == "assigned" or task.extension_status == "rejected":
+            logger.info(f"Reassigning overdue task {task_id_str}")
+            reassign_task.delay(task_id_str)
         else:
-            logger.info(f"Task {task_id} has extensions. No reassignment needed.")
-    else:
-        logger.info(f"Task {task_id} is not overdue")
+            logger.info(f"No action needed for task {task_id_str} with status {task.status} and extension_status {task.extension_status}")

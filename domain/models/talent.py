@@ -18,7 +18,9 @@ class Talent(BaseModel):
             data = redis_client.hgetall(f"talent:{talent_id}")
             if not data:
                 return None
-            decoded = {k.decode(): v.decode() for k, v in data.items()}
+            decoded = {k.decode() if isinstance(k, bytes) else k:
+                   v.decode() if isinstance(v, bytes) else v
+                   for k, v in data.items()}
             return cls(
                 talent_id=talent_id,
                 available=decoded.get("available", "false").lower() == "true",

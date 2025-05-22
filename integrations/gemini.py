@@ -35,7 +35,7 @@ class GeminiAIClient:
         self.cache_ttl = timedelta(hours=1)
         logger.info("Gemini AI client initialized successfully")
 
-    @retry(max_retries=3, backoff_factor=1.5)
+    @retry(max_retries=3)
     @validate_input
     def evaluate_extension(self, request_context: str) -> Optional[ExtensionEvaluation]:
         """Evaluate extension request using Gemini API with caching"""

@@ -23,7 +23,7 @@ class Talent(BaseModel):
                    for k, v in data.items()}
             return cls(
                 talent_id=talent_id,
-                available=decoded.get("available", "false").lower() == "true",
+                available=decoded.get("available", "true").lower() == "true",
                 rating=float(decoded.get("rating", 0)),
                 skills=json.loads(decoded.get("skills", "[]")),
                 last_assigned_at=datetime.fromisoformat(decoded["last_assigned_at"]) if decoded.get("last_assigned_at") else None

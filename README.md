@@ -22,7 +22,6 @@ Talent Match is a task management and talent assignment system designed to strea
 ├── domain/                 # Core business logic (models, services, utilities)
 ├── integrations/           # External service integrations (OpenAI, Slack, Redis)
 ├── tasks/                  # Celery tasks for assignment, monitoring, and reassignment
-├── tests/                  # Unit and integration tests
 ├── logs/                   # Log files
 ├── .env                    # Environment variables
 ├── requirements.txt        # Python dependencies

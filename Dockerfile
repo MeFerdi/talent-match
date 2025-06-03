@@ -1,30 +1,28 @@
-FROM python:3.13-alpine AS builder
+FROM python:3.13-slim
 
 WORKDIR /app
-COPY requirements.txt .
 
-RUN apk add --no-cache --virtual .build-deps \
-    gcc \
-    musl-dev \
+# Install system dependencies for opencv-python and others
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    cmake \
+    git \
+    curl \
+    bash \
+    libglib2.0-0 \
+    libsm6 \
+    libxrender1 \
+    libxext6 \
     libffi-dev \
-    openssl-dev \
-    && pip install --user --no-cache-dir -r requirements.txt \
-    && apk del .build-deps
+    libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
 
-FROM python:3.13-alpine
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
-WORKDIR /app
-
-
-COPY --from=builder /root/.local /root/.local
 COPY . .
 
-
-RUN apk add --no-cache curl bash libffi openssl
-
-
-ENV PATH=/root/.local/bin:$PATH \
-    PYTHONPATH=/app \
+ENV PYTHONPATH=/app \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 
@@ -33,4 +31,4 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
-CMD ["sh", "-c", "pytest tests/ || true && python main.py"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

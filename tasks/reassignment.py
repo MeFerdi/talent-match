@@ -22,6 +22,8 @@ def reassign_task(self, task_id: str):
 
         # Atomic reassignment and deadline reset
         with redis.pipeline() as pipe:
+            if task.assigned_to:
+                pipe.hset(f"talent:{task.assigned_to}", "available", "true")
             pipe.hset(f"task:{task_id}", mapping={
                 "assigned_to": new_talent,
                 "claimed_at": now.isoformat(),

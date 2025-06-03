@@ -31,7 +31,7 @@ services:
     ports:
       - "8000:8000"
     restart: unless-stopped
-    command: sh -c "pytest tests/ || true && python main.py"
+    command: uvicorn main:app --host 0.0.0.0 --port 8000
 
   celery-worker:
     build: 
@@ -41,7 +41,7 @@ services:
       - CELERY_BROKER_URL=redis://redis:6379/0
       - GEMINI_API_KEY=${GEMINI_API_KEY}
       - PYTHONPATH=/app
-    command: celery -A app.tasks worker --loglevel=info
+    command: celery -A config.celery worker --loglevel=info
     depends_on:
       - redis
       - app
@@ -49,7 +49,7 @@ services:
       - .:/app
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "celery", "-A", "app.tasks", "inspect", "ping"]
+      test: ["CMD", "celery", "-A", "config.celery", "inspect", "ping"]
       interval: 30s
       timeout: 10s
 

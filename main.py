@@ -1,3 +1,4 @@
+import os
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from typing import Optional, Dict
@@ -12,7 +13,7 @@ import redis
 
 app = FastAPI(title="Talent Match API")
 
-redis_client = redis.Redis.from_url("redis://localhost:6379/0", decode_responses=True)
+redis_client = redis.Redis.from_url(os.getenv("REDIS_URL", "redis://redis:6379/0"), decode_responses=True)
 event_stream = RedisEventStream()
 
 # --- Pydantic Schemas for API ---
@@ -29,7 +30,7 @@ class ExtensionProcess(BaseModel):
 
 @app.post("/tasks", response_model=Task)
 def create_task(payload: TaskCreate):
-    # Generate a new task_id (for demo, use timestamp)
+    # Generating a new task_id (for demo, use timestamp)
     task_id = f"task_{int(datetime.now().timestamp())}"
     task = Task(
         task_id=task_id,
@@ -40,7 +41,7 @@ def create_task(payload: TaskCreate):
         due_date=datetime.now() + timedelta(hours=24)
     )
     task.to_redis(redis_client)
-    # Ensure automatic assignment by triggering the Celery assignment task immediately
+    # Ensuring automatic assignment by triggering the Celery assignment task immediately
     assign_task.delay(task_id)
     event_stream.publish("tasks", {"event": "created", "task_id": task_id})
     return Task.from_redis(redis_client, task_id)  # Return the latest state (may still be unassigned if Celery is async)
@@ -62,7 +63,7 @@ def request_extension(task_id: str, req: ExtensionRequest):
 
 @app.post("/tasks/{task_id}/process-extension")
 def process_extension(task_id: str, req: ExtensionProcess):
-    # For demo, just update fields directly
+    # updating fields directly
     task = Task.from_redis(redis_client, task_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
@@ -80,8 +81,6 @@ def process_extension(task_id: str, req: ExtensionProcess):
 
 @app.post("/cron/reassign-tasks")
 def trigger_reassignment():
-    # For demo, you might want to pass a list of task_ids or scan all tasks
-    # Here, just a placeholder for triggering the Celery task
     reassign_task.delay("task_id_placeholder")
     event_stream.publish("tasks", {"event": "reassignment_triggered"})
     return {"status": "reassignment triggered"}
@@ -97,8 +96,7 @@ def complete_task(task_id: str):
     task.to_redis(redis_client)
     event_stream.publish("tasks", {"event": "completed", "task_id": task_id})
     return {"status": "completed"}
-
-# Optionally, add a health check
+# Health check endpoint
 @app.get("/health")
 def health():
     return {"status": "ok"}

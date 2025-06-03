@@ -1,4 +1,5 @@
 import os
+from venv import logger
 from celery import Celery
 from celery.schedules import crontab
 from domain.utils.security import validate_task_payload
@@ -17,8 +18,8 @@ app.autodiscover_tasks([
 
 app.conf.update(
     # Broker and backend configuration
-    broker_url=os.getenv('REDIS_URL', 'redis://localhost:6379/0'),
-    result_backend=os.getenv('REDIS_URL', 'redis://localhost:6379/0'),
+    broker_url=os.getenv('CELERY_BROKER_URL', 'redis://localhost:6379/0'),
+    result_backend=os.getenv('CELERY_RESULT_BACKEND', 'redis://localhost:6379/0'),
     
     # Serialization and security
     task_serializer='json',
@@ -31,7 +32,7 @@ app.conf.update(
     task_reject_on_worker_lost=True,
     task_track_started=True,
     broker_connection_retry_on_startup=True,
-    worker_prefetch_multiplier=1,  # Prevent task pile-up
+    worker_prefetch_multiplier=1,
     
     # Queue routing
     task_routes={
@@ -91,7 +92,6 @@ def validate_and_process_task(self, payload: dict):
         task_id = payload['task_id']
         logger.info(f"Processing task: {task_id}")
         
-        # Additional processing logic here
         return {"status": "success", "task_id": task_id}
         
     except Exception as e:
